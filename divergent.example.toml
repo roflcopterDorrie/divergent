@@ -1,0 +1,6 @@
+# Copy this file to divergent.toml at the root of your main repo.
+# Paths are relative to the config file's directory, or absolute.
+variations = [
+  "../variation-1",
+  "../variation-2",
+]
