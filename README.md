@@ -19,6 +19,8 @@ variations = [
   "../variation-1",
   "../variation-2",
 ]
+variation_base_branch = "develop"
+main_branch_pattern = "^feature/.+"
 ```
 
 ## Usage
@@ -54,15 +56,24 @@ it even when `\\wsl$` paths do not work.
 
 ## How comparison works
 
+Main is expected on a branch like `feature/123` (configurable regex). Each
+variation is compared against its **`develop`** branch (configurable), not
+whatever happens to be checked out. A warning is shown if a variation is not
+currently on `develop`, or if main’s branch does not match the pattern.
+
 For commit `C` in main, each changed path is compared as follows against each
-variation’s `HEAD`:
+variation’s base branch (default `develop`):
 
 | Change in `C` | Safe when |
 | --- | --- |
-| Modified | `main:C^:path` equals `variation:HEAD:path` |
-| Added | path does not exist in the variation |
-| Deleted | `main:C^:path` equals `variation:HEAD:path` |
+| Modified | `main:C^:path` equals `variation:develop:path` |
+| Added | path does not exist on `develop` |
+| Deleted | `main:C^:path` equals `variation:develop:path` |
 | Renamed | treated as delete of the old path + add of the new path |
+
+When a variation is fully syncable, the HTML sync script creates the **same
+feature branch name as main** from `develop`, switches to it, then copies files
+and commits.
 
 ## Read-only guarantee
 

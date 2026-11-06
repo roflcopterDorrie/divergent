@@ -95,10 +95,17 @@ def cmd_check(args: argparse.Namespace) -> int:
     out_path.write_text(html, encoding="utf-8")
 
     print(f"report: {out_path}")
+    if result.main_branch:
+        print(f"main branch: {result.main_branch}")
+    else:
+        print("main branch: (detached HEAD)")
+    print(f"compare ref: {result.variation_base_branch}")
     if result.all_safe:
         print("result: all syncable")
     else:
         print("result: action needed")
+    for warning in result.all_warnings:
+        print(f"warning: {warning}", file=sys.stderr)
 
     if not args.no_open:
         ok, opened_path, warning = open_html_report(out_path)

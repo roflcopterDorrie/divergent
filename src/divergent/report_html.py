@@ -156,6 +156,17 @@ h3 { font-size: 1.05rem; margin: 1.25rem 0 0.5rem; }
 }
 .banner.ok { background: var(--safe-bg); color: var(--safe); }
 .banner.bad { background: var(--bad-bg); color: var(--bad); }
+.banner.warn { background: var(--warn-bg); color: var(--warn); }
+.warnings {
+  background: var(--warn-bg);
+  border: 1px solid #e6d2a8;
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  margin: 0 0 1.25rem;
+}
+.warnings h2 { margin: 0 0 0.5rem; font-size: 1rem; color: var(--warn); }
+.warnings ul { margin: 0; padding-left: 1.2rem; }
+.warnings li { margin: 0.25rem 0; }
 .panel {
   background: var(--surface);
   border: 1px solid var(--line);
@@ -329,11 +340,17 @@ def _render_file_row(f: FileResult, idx: str) -> str:
 
 
 def _render_variation(result: CheckResult, var: VariationResult, index: int) -> str:
+    branch_label = var.current_branch if var.current_branch else "detached HEAD"
     parts: list[str] = [
         f"<section class='panel' id='var-{index}'>",
         f"<h2>{_esc(var.name)}</h2>",
-        f"<p class='meta'><code>{_esc(str(var.path))}</code></p>",
+        f"<p class='meta'><code>{_esc(str(var.path))}</code><br>"
+        f"comparing against <code>{_esc(var.compare_ref)}</code> · "
+        f"checked out: <code>{_esc(branch_label)}</code></p>",
     ]
+
+    for warning in var.warnings:
+        parts.append(f"<p><span class='banner warn'>Warning</span> {_esc(warning)}</p>")
 
     if not result.changes:
         parts.append("<p class='note'>No files changed in this commit.</p>")
@@ -347,7 +364,8 @@ def _render_variation(result: CheckResult, var: VariationResult, index: int) -> 
         parts.append("<h3>Sync command</h3>")
         parts.append(
             "<p class='note'>Read-only tool: this script is for you to copy and run. "
-            "Divergent will not execute it.</p>"
+            "Divergent will not execute it. It creates the same feature branch as main "
+            f"from <code>{_esc(result.variation_base_branch)}</code>, then copies files.</p>"
         )
         parts.append('<div class="sync-wrap">')
         parts.append(
@@ -398,6 +416,17 @@ def render_html(result: CheckResult) -> str:
         _render_variation(result, var, i) for i, var in enumerate(result.variations)
     )
 
+    main_branch_label = result.main_branch if result.main_branch else "detached HEAD"
+    warnings = result.all_warnings
+    if warnings:
+        warning_items = "\n".join(f"<li>{_esc(w)}</li>" for w in warnings)
+        warnings_block = (
+            '<section class="warnings"><h2>Branch warnings</h2>'
+            f"<ul>{warning_items}</ul></section>"
+        )
+    else:
+        warnings_block = ""
+
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -412,9 +441,12 @@ def render_html(result: CheckResult) -> str:
   <p class="meta">
     Commit <code>{_esc(result.commit)}</code><br>
     {_esc(result.subject)}<br>
-    {_esc(result.date)} · main <code>{_esc(str(result.main_repo))}</code>
+    {_esc(result.date)} · main <code>{_esc(str(result.main_repo))}</code><br>
+    main branch <code>{_esc(main_branch_label)}</code> ·
+    comparing variations against <code>{_esc(result.variation_base_branch)}</code>
   </p>
   <p><span class="banner {overall_class}">{_esc(overall)}</span></p>
+  {warnings_block}
   <div class="legend">
     <span class="status safe">syncable</span>
     <span class="status diverged">diverged</span>

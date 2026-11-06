@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import re
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
 from divergent.gitutil import is_git_repo
+
+DEFAULT_VARIATION_BASE_BRANCH = "develop"
+DEFAULT_MAIN_BRANCH_PATTERN = r"^feature/.+"
 
 
 class ConfigError(ValueError):
@@ -20,6 +24,12 @@ class Config:
     config_path: Path
     main_repo: Path
     variations: list[Path]
+    variation_base_branch: str = DEFAULT_VARIATION_BASE_BRANCH
+    main_branch_pattern: str = DEFAULT_MAIN_BRANCH_PATTERN
+
+    @property
+    def main_branch_regex(self) -> re.Pattern[str]:
+        return re.compile(self.main_branch_pattern)
 
 
 def default_config_path(main_repo: Path) -> Path:
@@ -51,6 +61,20 @@ def load_config(config_path: Path) -> Config:
     if not all(isinstance(v, str) for v in raw_variations):
         raise ConfigError(f"{config_path}: 'variations' entries must be strings")
 
+    base_branch = data.get("variation_base_branch", DEFAULT_VARIATION_BASE_BRANCH)
+    if not isinstance(base_branch, str) or not base_branch.strip():
+        raise ConfigError(f"{config_path}: 'variation_base_branch' must be a non-empty string")
+    base_branch = base_branch.strip()
+
+    pattern = data.get("main_branch_pattern", DEFAULT_MAIN_BRANCH_PATTERN)
+    if not isinstance(pattern, str) or not pattern.strip():
+        raise ConfigError(f"{config_path}: 'main_branch_pattern' must be a non-empty string")
+    pattern = pattern.strip()
+    try:
+        re.compile(pattern)
+    except re.error as exc:
+        raise ConfigError(f"{config_path}: invalid 'main_branch_pattern' regex: {exc}") from exc
+
     base = config_path.parent
     variations: list[Path] = []
     for entry in raw_variations:
@@ -72,4 +96,10 @@ def load_config(config_path: Path) -> Config:
     except Exception as exc:
         raise ConfigError(f"config directory is not inside a git repository: {base}") from exc
 
-    return Config(config_path=config_path, main_repo=main_repo, variations=variations)
+    return Config(
+        config_path=config_path,
+        main_repo=main_repo,
+        variations=variations,
+        variation_base_branch=base_branch,
+        main_branch_pattern=pattern,
+    )

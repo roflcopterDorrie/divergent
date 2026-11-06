@@ -48,9 +48,13 @@ def test_html_syncable_includes_script(sibling_repos: dict[str, Path]) -> None:
     assert "More detail." in html
     assert str(main.resolve()) in html or "git -C" in html
     assert "git commit -F -" in html
+    assert "git switch -c" in html
     script = render_sync_script(result, result.variations[0])
     assert "shared.txt" in script
     assert "set -euo pipefail" in script
+    assert 'git switch -c "${BRANCH}" "${BASE}"' in script
+    assert "feature/123" in script
+    assert "develop" in script
 
 
 def test_html_diverged_includes_diff(sibling_repos: dict[str, Path]) -> None:

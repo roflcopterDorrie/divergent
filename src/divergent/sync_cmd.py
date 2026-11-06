@@ -11,8 +11,11 @@ from divergent.compare import ChangeKind, CheckResult, FileResult, VariationResu
 
 def render_sync_script(result: CheckResult, variation: VariationResult) -> str:
     """
-    Build a bash script that copies post-commit files from main into *variation*
-    and creates a commit with the same message.
+    Build a bash script that:
+
+    1. Creates ``feature/…`` (same name as main) from the variation base branch
+    2. Copies post-commit files from main into that branch
+    3. Creates a commit with the same message
 
     The tool only displays this script; it does not run it.
     """
@@ -22,6 +25,8 @@ def render_sync_script(result: CheckResult, variation: VariationResult) -> str:
     main = result.main_repo.resolve()
     var = variation.path.resolve()
     commit = result.commit
+    base = result.variation_base_branch
+    branch = result.main_branch
     delim = f"DIVERGENT_EOF_{secrets.token_hex(8)}"
 
     lines: list[str] = [
@@ -32,6 +37,29 @@ def render_sync_script(result: CheckResult, variation: VariationResult) -> str:
         f"cd {shlex.quote(str(var))}",
         "",
     ]
+
+    if branch:
+        lines.extend(
+            [
+                f"BRANCH={shlex.quote(branch)}",
+                f"BASE={shlex.quote(base)}",
+                "# Create the same feature branch as main, starting from the base branch",
+                'if git show-ref --verify --quiet "refs/heads/${BRANCH}"; then',
+                '  echo "error: branch ${BRANCH} already exists in $(pwd)" >&2',
+                "  exit 1",
+                "fi",
+                'git switch -c "${BRANCH}" "${BASE}"',
+                "",
+            ]
+        )
+    else:
+        lines.extend(
+            [
+                "# WARNING: main was not on a named branch; not creating a feature branch.",
+                f"# Ensure you are on a branch based on {base} before continuing.",
+                "",
+            ]
+        )
 
     for f in variation.files:
         lines.extend(_file_commands(main, commit, f))

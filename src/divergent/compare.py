@@ -57,7 +57,10 @@ class FileResult:
 class VariationResult:
     name: str
     path: Path
+    compare_ref: str
+    current_branch: str | None = None
     files: list[FileResult] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
 
     @property
     def counts(self) -> dict[FileStatus, int]:
@@ -79,12 +82,22 @@ class CheckResult:
     message: str
     date: str
     main_repo: Path
+    main_branch: str | None
+    variation_base_branch: str
     changes: list[FileChange]
     variations: list[VariationResult]
+    warnings: list[str] = field(default_factory=list)
 
     @property
     def all_safe(self) -> bool:
         return all(v.all_safe for v in self.variations)
+
+    @property
+    def all_warnings(self) -> list[str]:
+        out = list(self.warnings)
+        for var in self.variations:
+            out.extend(var.warnings)
+        return out
 
 
 def expand_changes(entries: list[tuple[str, str, str | None]]) -> list[FileChange]:
@@ -121,32 +134,33 @@ def classify(
     Classify one path for one variation.
 
     *pre_bytes*: content in main at C^ (None if path did not exist).
-    *var_bytes*: content in variation at HEAD (None if path does not exist).
+    *var_bytes*: content in variation at the base branch (None if path does not exist).
     """
     if kind == ChangeKind.ADDED:
         if var_bytes is None:
-            return FileStatus.SAFE, "path absent in variation; safe to add"
-        return FileStatus.UNEXPECTED, "path already exists in variation"
+            return FileStatus.SAFE, "path absent on base branch; safe to add"
+        return FileStatus.UNEXPECTED, "path already exists on base branch"
 
     if pre_bytes is None:
         if var_bytes is None:
             return FileStatus.SAFE, "path absent on both sides"
-        return FileStatus.UNEXPECTED, "no pre-commit content in main but path exists in variation"
+        return FileStatus.UNEXPECTED, "no pre-commit content in main but path exists on base branch"
 
     if var_bytes is None:
-        return FileStatus.MISSING, "path missing in variation"
+        return FileStatus.MISSING, "path missing on base branch"
 
     if pre_bytes == var_bytes:
         if kind == ChangeKind.DELETED:
-            return FileStatus.SAFE, "pre-commit content matches; safe to delete"
-        return FileStatus.SAFE, "pre-commit content matches; safe to update"
+            return FileStatus.SAFE, "pre-commit content matches base branch; safe to delete"
+        return FileStatus.SAFE, "pre-commit content matches base branch; safe to update"
 
-    return FileStatus.DIVERGED, "pre-commit content differs from variation"
+    return FileStatus.DIVERGED, "pre-commit content differs from base branch"
 
 
 def _build_diff(
     status: FileStatus,
     variation_name: str,
+    compare_ref: str,
     parent: str,
     commit: str,
     pre: bytes | None,
@@ -157,21 +171,21 @@ def _build_diff(
     commit_short = commit[:12]
     if status == FileStatus.DIVERGED:
         return FileDiff(
-            left_label=f"{variation_name}:HEAD",
+            left_label=f"{variation_name}:{compare_ref}",
             right_label=f"main:{parent_short} (pre-commit)",
             left=var,
             right=pre,
         )
     if status == FileStatus.UNEXPECTED:
         return FileDiff(
-            left_label=f"{variation_name}:HEAD",
+            left_label=f"{variation_name}:{compare_ref}",
             right_label=f"main:{commit_short} (incoming)",
             left=var,
             right=post,
         )
     if status == FileStatus.MISSING:
         return FileDiff(
-            left_label=f"{variation_name}:HEAD (missing)",
+            left_label=f"{variation_name}:{compare_ref} (missing)",
             right_label=f"main:{parent_short} (pre-commit)",
             left=None,
             right=pre,
@@ -191,8 +205,28 @@ def check_variation(
     commit: str,
     variation: Path,
     changes: list[FileChange],
+    compare_ref: str,
 ) -> VariationResult:
     name = variation.name
+    warnings: list[str] = []
+    current = gitutil.current_branch(variation)
+
+    if not gitutil.ref_exists(variation, compare_ref):
+        raise gitutil.GitError(
+            f"variation {name!r} has no branch/ref {compare_ref!r} to compare against"
+        )
+
+    if current is None:
+        warnings.append(
+            f"{name}: checked out in detached HEAD state "
+            f"(expected branch {compare_ref!r}; still comparing against {compare_ref!r})"
+        )
+    elif current != compare_ref:
+        warnings.append(
+            f"{name}: currently on branch {current!r}, expected {compare_ref!r} "
+            f"(still comparing against {compare_ref!r})"
+        )
+
     results: list[FileResult] = []
     for change in changes:
         if change.kind == ChangeKind.ADDED:
@@ -205,9 +239,9 @@ def check_variation(
         else:
             post = gitutil.blob_at(main_repo, commit, change.path)
 
-        var = gitutil.blob_at(variation, "HEAD", change.path)
+        var = gitutil.blob_at(variation, compare_ref, change.path)
         status, detail = classify(change.kind, pre, var)
-        diff = _build_diff(status, name, parent, commit, pre, post, var)
+        diff = _build_diff(status, name, compare_ref, parent, commit, pre, post, var)
         results.append(
             FileResult(
                 path=change.path,
@@ -217,7 +251,14 @@ def check_variation(
                 diff=diff,
             )
         )
-    return VariationResult(name=name, path=variation, files=results)
+    return VariationResult(
+        name=name,
+        path=variation,
+        compare_ref=compare_ref,
+        current_branch=current,
+        files=results,
+        warnings=warnings,
+    )
 
 
 def run_check(config: Config, commit_ref: str = "HEAD") -> CheckResult:
@@ -229,9 +270,23 @@ def run_check(config: Config, commit_ref: str = "HEAD") -> CheckResult:
     message = gitutil.commit_message(main, commit)
     date = gitutil.commit_date(main, commit)
     changes = list_commit_changes(main, commit)
+    main_branch = gitutil.current_branch(main)
+    base = config.variation_base_branch
+
+    warnings: list[str] = []
+    if main_branch is None:
+        warnings.append(
+            "main repo is in detached HEAD state "
+            f"(expected a branch matching /{config.main_branch_pattern}/)"
+        )
+    elif not config.main_branch_regex.match(main_branch):
+        warnings.append(
+            f"main repo is on branch {main_branch!r}, "
+            f"expected a name matching /{config.main_branch_pattern}/"
+        )
 
     variations = [
-        check_variation(main, parent, commit, var_path, changes)
+        check_variation(main, parent, commit, var_path, changes, base)
         for var_path in config.variations
     ]
     return CheckResult(
@@ -241,6 +296,9 @@ def run_check(config: Config, commit_ref: str = "HEAD") -> CheckResult:
         message=message,
         date=date,
         main_repo=main,
+        main_branch=main_branch,
+        variation_base_branch=base,
         changes=changes,
         variations=variations,
+        warnings=warnings,
     )

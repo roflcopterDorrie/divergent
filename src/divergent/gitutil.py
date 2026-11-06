@@ -174,3 +174,22 @@ def is_git_repo(path: Path) -> bool:
 def toplevel(path: Path) -> Path:
     out = run_git(path, "rev-parse", "--show-toplevel").stdout.decode().strip()
     return Path(out)
+
+
+def current_branch(repo: Path) -> str | None:
+    """
+    Return the checked-out branch name, or None if detached / unborn.
+    """
+    result = run_git(repo, "rev-parse", "--abbrev-ref", "HEAD", check=False)
+    if result.returncode != 0:
+        return None
+    name = result.stdout.decode().strip()
+    if not name or name == "HEAD":
+        return None
+    return name
+
+
+def ref_exists(repo: Path, ref: str) -> bool:
+    """True if *ref* resolves to a commit in *repo*."""
+    result = run_git(repo, "rev-parse", "--verify", f"{ref}^{{commit}}", check=False)
+    return result.returncode == 0

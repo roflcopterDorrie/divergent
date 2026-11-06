@@ -35,22 +35,28 @@ def _commit(repo: Path, message: str) -> str:
     return result.stdout.strip()
 
 
-def test_cli_check_safe(sibling_repos: dict[str, Path], capsys, monkeypatch) -> None:
+def test_cli_check_safe(
+    sibling_repos: dict[str, Path], tmp_path: Path, capsys, monkeypatch
+) -> None:
     main_repo = sibling_repos["main"]
     _write(main_repo, "shared.txt", "hello world\n")
     _commit(main_repo, "update shared")
 
+    out_file = tmp_path / "out.html"
     monkeypatch.chdir(main_repo)
     with pytest.raises(SystemExit) as exc:
-        cli_main(["check", "--no-open"])
+        cli_main(["check", "--no-open", "-o", str(out_file)])
     assert exc.value.code == EXIT_OK
 
     out = capsys.readouterr().out
     assert "report:" in out
     assert "all syncable" in out
+    assert "main branch: feature/123" in out
 
 
-def test_cli_check_diverged(sibling_repos: dict[str, Path], capsys, monkeypatch) -> None:
+def test_cli_check_diverged(
+    sibling_repos: dict[str, Path], tmp_path: Path, capsys, monkeypatch
+) -> None:
     main_repo = sibling_repos["main"]
     v1 = sibling_repos["v1"]
     _write(v1, "shared.txt", "drifted\n")
@@ -58,9 +64,10 @@ def test_cli_check_diverged(sibling_repos: dict[str, Path], capsys, monkeypatch)
     _write(main_repo, "shared.txt", "hello world\n")
     _commit(main_repo, "update shared")
 
+    out_file = tmp_path / "out.html"
     monkeypatch.chdir(main_repo)
     with pytest.raises(SystemExit) as exc:
-        cli_main(["check", "--no-open"])
+        cli_main(["check", "--no-open", "-o", str(out_file)])
     assert exc.value.code == EXIT_DIVERGED
 
     out = capsys.readouterr().out
@@ -97,3 +104,5 @@ def test_cli_write_output_file(
     assert "shared.txt" in text
     assert "Fully syncable" in text
     assert "git commit -F -" in text
+    assert "git switch -c" in text
+    assert "feature/123" in text

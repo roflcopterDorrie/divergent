@@ -50,10 +50,8 @@ def sibling_repos(tmp_path: Path) -> dict[str, Path]:
     """
     Parent directory with main + two variations sharing an identical shared.txt.
 
-    Layout:
-      tmp/main/
-      tmp/variation-1/
-      tmp/variation-2/
+    - main checked out on feature/123
+    - variations have a develop branch and are checked out on develop
     """
     parent = tmp_path
     main = _init_repo(parent / "main")
@@ -65,9 +63,16 @@ def sibling_repos(tmp_path: Path) -> dict[str, Path]:
         _write(repo, "keep.txt", "unchanged\n")
         _commit_all(repo, "initial")
 
+    _git(main, "checkout", "-b", "feature/123")
+    for repo in (v1, v2):
+        _git(repo, "branch", "develop")
+        _git(repo, "checkout", "develop")
+
     config = main / "divergent.toml"
     config.write_text(
-        'variations = ["../variation-1", "../variation-2"]\n',
+        'variations = ["../variation-1", "../variation-2"]\n'
+        'variation_base_branch = "develop"\n'
+        'main_branch_pattern = "^feature/.+"\n',
         encoding="utf-8",
     )
 
