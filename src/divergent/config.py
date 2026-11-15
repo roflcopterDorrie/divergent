@@ -10,6 +10,7 @@ from pathlib import Path
 from divergent.gitutil import is_git_repo
 
 DEFAULT_VARIATION_BASE_BRANCH = "develop"
+DEFAULT_MAIN_BASE_BRANCH = "develop"
 DEFAULT_MAIN_BRANCH_PATTERN = r"^feature/.+"
 
 
@@ -25,6 +26,7 @@ class Config:
     main_repo: Path
     variations: list[Path]
     variation_base_branch: str = DEFAULT_VARIATION_BASE_BRANCH
+    main_base_branch: str = DEFAULT_MAIN_BASE_BRANCH
     main_branch_pattern: str = DEFAULT_MAIN_BRANCH_PATTERN
 
     @property
@@ -66,6 +68,11 @@ def load_config(config_path: Path) -> Config:
         raise ConfigError(f"{config_path}: 'variation_base_branch' must be a non-empty string")
     base_branch = base_branch.strip()
 
+    main_base = data.get("main_base_branch", DEFAULT_MAIN_BASE_BRANCH)
+    if not isinstance(main_base, str) or not main_base.strip():
+        raise ConfigError(f"{config_path}: 'main_base_branch' must be a non-empty string")
+    main_base = main_base.strip()
+
     pattern = data.get("main_branch_pattern", DEFAULT_MAIN_BRANCH_PATTERN)
     if not isinstance(pattern, str) or not pattern.strip():
         raise ConfigError(f"{config_path}: 'main_branch_pattern' must be a non-empty string")
@@ -101,5 +108,6 @@ def load_config(config_path: Path) -> Config:
         main_repo=main_repo,
         variations=variations,
         variation_base_branch=base_branch,
+        main_base_branch=main_base,
         main_branch_pattern=pattern,
     )

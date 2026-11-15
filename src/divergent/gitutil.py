@@ -7,6 +7,7 @@ All calls go through an allowlist enforced in ``run_git``.
 from __future__ import annotations
 
 import subprocess
+from dataclasses import dataclass
 from pathlib import Path
 
 # Well-known SHA of the empty tree; avoids calling hash-object.
@@ -21,6 +22,7 @@ _READ_ONLY_SUBCOMMANDS = frozenset(
         "diff-tree",
         "cat-file",
         "show",
+        "merge-base",
     }
 )
 
@@ -193,3 +195,121 @@ def ref_exists(repo: Path, ref: str) -> bool:
     """True if *ref* resolves to a commit in *repo*."""
     result = run_git(repo, "rev-parse", "--verify", f"{ref}^{{commit}}", check=False)
     return result.returncode == 0
+
+
+def merge_base(repo: Path, ref_a: str, ref_b: str) -> str:
+    """Return the merge-base commit SHA of *ref_a* and *ref_b*."""
+    return run_git(repo, "merge-base", ref_a, ref_b).stdout.decode().strip()
+
+
+def commits_in_range(repo: Path, start: str, end: str) -> list[str]:
+    """
+    Commit SHAs reachable from *end* but not *start* (``start..end``),
+    oldest first.
+    """
+    out = run_git(
+        repo, "rev-list", "--reverse", f"{start}..{end}"
+    ).stdout.decode().strip()
+    if not out:
+        return []
+    return out.splitlines()
+
+
+def log_subjects(repo: Path, start: str, end: str) -> list[str]:
+    """Subjects for ``start..end``, oldest first."""
+    out = run_git(
+        repo,
+        "log",
+        "--reverse",
+        "--format=%s",
+        f"{start}..{end}",
+    ).stdout.decode().rstrip("\n")
+    if not out:
+        return []
+    return out.splitlines()
+
+
+def log_messages(repo: Path, start: str, end: str) -> list[str]:
+    """Full commit messages (%B) for ``start..end``, oldest first."""
+    # Use a rare delimiter so multi-line messages stay intact.
+    delim = "\x1e"
+    out = run_git(
+        repo,
+        "log",
+        "--reverse",
+        f"--format={delim}%B",
+        f"{start}..{end}",
+    ).stdout.decode()
+    parts = [p.strip("\n") for p in out.split(delim) if p.strip("\n")]
+    return parts
+
+
+@dataclass
+class PathCommitEntry:
+    """One commit that touched a path on a branch."""
+
+    commit: str
+    subject: str
+    action: str  # added | modified | deleted | renamed
+
+
+def path_log_with_status(
+    repo: Path, rev: str, path: str
+) -> list[PathCommitEntry]:
+    """
+    Commits that touched *path* reachable from *rev*, newest first.
+
+    Uses ``--follow`` so renames are tracked. Action comes from name-status.
+    """
+    # Format: commit\0subject\0 then name-status lines, records separated by \0\0
+    # Simpler approach: log --follow --name-status with custom format markers.
+    result = run_git(
+        repo,
+        "log",
+        "--follow",
+        "--name-status",
+        "--format=commit %H%nsubject %s",
+        rev,
+        "--",
+        path,
+    )
+    text = result.stdout.decode("utf-8", errors="replace")
+    if not text.strip():
+        return []
+
+    entries: list[PathCommitEntry] = []
+    current_sha: str | None = None
+    current_subject: str | None = None
+    for line in text.splitlines():
+        if line.startswith("commit "):
+            current_sha = line[len("commit ") :].strip()
+            current_subject = None
+        elif line.startswith("subject "):
+            current_subject = line[len("subject ") :]
+        elif not line.strip():
+            continue
+        elif current_sha and current_subject is not None:
+            # name-status line: M\tpath or R100\told\tnew etc.
+            parts = line.split("\t")
+            if not parts:
+                continue
+            letter = parts[0][0] if parts[0] else "?"
+            action = {
+                "A": "added",
+                "M": "modified",
+                "D": "deleted",
+                "R": "renamed",
+                "C": "renamed",
+                "T": "modified",
+            }.get(letter, "modified")
+            entries.append(
+                PathCommitEntry(
+                    commit=current_sha,
+                    subject=current_subject,
+                    action=action,
+                )
+            )
+            # Only take the first status line per commit for this path.
+            current_sha = None
+            current_subject = None
+    return entries

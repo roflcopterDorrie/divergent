@@ -63,17 +63,23 @@ def sibling_repos(tmp_path: Path) -> dict[str, Path]:
         _write(repo, "keep.txt", "unchanged\n")
         _commit_all(repo, "initial")
 
-    _git(main, "checkout", "-b", "feature/123")
-    for repo in (v1, v2):
-        _git(repo, "branch", "develop")
-        _git(repo, "checkout", "develop")
-
     config = main / "divergent.toml"
     config.write_text(
         'variations = ["../variation-1", "../variation-2"]\n'
         'variation_base_branch = "develop"\n'
+        'main_base_branch = "develop"\n'
         'main_branch_pattern = "^feature/.+"\n',
         encoding="utf-8",
     )
+    # Commit config on main before cutting develop so default fork..HEAD
+    # ranges only include feature commits.
+    _commit_all(main, "add divergent config")
+
+    # Main: develop is the fork base; feature branches cut from it.
+    _git(main, "branch", "develop")
+    _git(main, "checkout", "-b", "feature/123")
+    for repo in (v1, v2):
+        _git(repo, "branch", "develop")
+        _git(repo, "checkout", "develop")
 
     return {"parent": parent, "main": main, "v1": v1, "v2": v2, "config": config}

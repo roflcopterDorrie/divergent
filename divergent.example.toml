@@ -8,6 +8,10 @@ variations = [
 # Branch on each variation repo to compare against (and to branch from in the sync script).
 variation_base_branch = "develop"
 
+# Branch on main that feature branches are cut from. Default check compares
+# merge-base(HEAD, main_base_branch)..HEAD (all commits since the fork).
+main_base_branch = "develop"
+
 # Main repo should be on a branch matching this regex (e.g. feature/123).
 # Mismatch is a warning; comparison still runs.
 main_branch_pattern = "^feature/.+"

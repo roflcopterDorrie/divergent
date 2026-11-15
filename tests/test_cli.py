@@ -102,7 +102,6 @@ def test_cli_write_output_file(
     text = out_file.read_text(encoding="utf-8")
     assert "<!DOCTYPE html>" in text
     assert "shared.txt" in text
-    assert "Fully syncable" in text
-    assert "git commit -F -" in text
     assert "git switch -c" in text
     assert "feature/123" in text
+    assert "git -C" in text

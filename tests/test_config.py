@@ -16,6 +16,8 @@ def test_load_valid_config(sibling_repos: dict[str, Path]) -> None:
         sibling_repos["v1"].resolve(),
         sibling_repos["v2"].resolve(),
     ]
+    assert config.main_base_branch == "develop"
+    assert config.variation_base_branch == "develop"
 
 
 def test_missing_config_file(tmp_path: Path) -> None:

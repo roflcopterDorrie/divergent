@@ -71,9 +71,12 @@ variation’s base branch (default `develop`):
 | Deleted | `main:C^:path` equals `variation:develop:path` |
 | Renamed | treated as delete of the old path + add of the new path |
 
-When a variation is fully syncable, the HTML sync script creates the **same
-feature branch name as main** from `develop`, switches to it, then copies files
-and commits.
+The HTML report splits each variation into **syncable** and **unsyncable**
+files. Syncable paths get a copy-paste shell script (creates the **same
+feature branch name as main** from `develop`, copies those files, and commits).
+Unsyncable paths (often intentional dist/generated differences) are listed
+separately with diffs so you can leave them to regenerate or merge by hand.
+A partial sync script still runs when only some files match.
 
 ## Read-only guarantee
 
@@ -82,8 +85,26 @@ stage, merge, or otherwise modify any repository. Git calls go through a
 subcommand allowlist (`rev-parse`, `log`, `rev-list`, `diff-tree`, `cat-file`,
 `show`).
 
-When a variation is fully syncable, the HTML report shows a **copy-paste shell
-script** you can run yourself. Divergent never executes that script.
+When a variation has any syncable files, the HTML report shows a **copy-paste
+shell script** for those paths. Divergent never executes that script.
+
+## Demo preview
+
+Rebuild throwaway demo repos and an HTML report that covers every file scenario
+(Added / Removed / Modified, Diverged / Missing / Unexpected, and rename), then
+open the report in your browser:
+
+```bash
+python3 scripts/generate_demo_preview.py
+```
+
+This writes:
+
+- `demo-repos/` — `main` on `feature/demo-matrix`, variations on `develop`
+- `demo-report.html` — opened automatically when generation finishes
+
+Both paths are gitignored. Exit code `1` is expected: variation-1 includes
+unsyncable paths on purpose.
 
 ## Development tests (optional)
 

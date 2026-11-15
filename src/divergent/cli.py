@@ -35,8 +35,11 @@ def build_parser() -> argparse.ArgumentParser:
     check.add_argument(
         "commit",
         nargs="?",
-        default="HEAD",
-        help="Commit to check (default: HEAD)",
+        default=None,
+        help=(
+            "Revision to check: omit for merge-base(main_base_branch)..HEAD; "
+            "pass A..B for an explicit range; or a single commit SHA"
+        ),
     )
     check.add_argument(
         "--config",
